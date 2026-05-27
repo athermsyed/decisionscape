@@ -18,8 +18,11 @@
 html,body { height:100%; background:var(--bg); color:var(--tp); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; overflow:hidden; }
 #app { height:100vh; display:flex; flex-direction:column; max-width:480px; margin:0 auto; position:relative; overflow:hidden; }
 
-.screen { position:absolute; inset:0; display:flex; flex-direction:column; opacity:0; pointer-events:none; transition:opacity 0.4s ease; overflow-y:auto; overflow-x:hidden; }
+.screen { position:absolute; inset:0; display:flex; flex-direction:column; opacity:0; pointer-events:none; transition:opacity 0.4s ease; overflow-y:auto; overflow-x:hidden; scrollbar-width:none; -ms-overflow-style:none; }
+.screen::-webkit-scrollbar { display:none; }
 .screen.active { opacity:1; pointer-events:all; }
+/* Scroll hint fade on results — sticky child, never fixed */
+.results-scroll-fade { position:sticky; bottom:0; height:72px; margin-top:-72px; background:linear-gradient(to top,rgba(13,13,26,.92) 0%,transparent 100%); pointer-events:none; flex-shrink:0; transition:opacity .3s; }
 
 /* LANDING */
 #landing { align-items:center; justify-content:center; padding:32px 24px 24px; background:radial-gradient(ellipse at 50% 0%,rgba(124,110,255,.18) 0%,transparent 70%); text-align:center; }
@@ -61,6 +64,24 @@ html,body { height:100%; background:var(--bg); color:var(--tp); font-family:-app
 .choice-btn.selected .choice-label { background:var(--acc); color:#fff; }
 .choice-text { font-size:14px; line-height:1.5; color:var(--tp); flex:1; padding-top:4px; }
 .ripple { position:absolute; border-radius:50%; background:rgba(124,110,255,.4); transform:scale(0); animation:rippleAnim .6s linear; pointer-events:none; }
+
+/* Timer */
+.timer-row { display:flex; align-items:center; gap:10px; margin-top:8px; }
+.timer-bar-track { flex:1; height:4px; background:rgba(255,255,255,.08); border-radius:2px; overflow:hidden; }
+.timer-bar-fill { height:100%; border-radius:2px; width:100%; transition:width 1s linear, background-color .6s ease; background:var(--acc); }
+.timer-bar-fill.urgent { animation:timerPulse .55s ease-in-out infinite; }
+.timer-num { font-size:13px; font-weight:700; min-width:26px; text-align:right; transition:color .5s ease; color:var(--tm); }
+@keyframes timerPulse { 0%,100%{opacity:1} 50%{opacity:.45} }
+
+/* Auto-pick overlay */
+.autopick-overlay { position:fixed; inset:0; background:rgba(0,0,0,.88); z-index:200; display:flex; align-items:center; justify-content:center; padding:28px; }
+.autopick-card { max-width:320px; text-align:center; animation:fadeUp .35s ease both; }
+.autopick-icon { font-size:52px; margin-bottom:14px; }
+.autopick-title { font-size:26px; font-weight:900; color:#F0F0FF; margin-bottom:6px; letter-spacing:-.5px; }
+.autopick-subtitle { font-size:15px; font-weight:700; color:#E74C3C; margin-bottom:20px; }
+.autopick-choice { font-size:13px; color:rgba(240,240,255,.8); line-height:1.7; margin-bottom:20px; background:rgba(255,255,255,.06); border-radius:12px; padding:14px 16px; border-left:3px solid #E74C3C; text-align:left; }
+.autopick-choice strong { display:block; font-size:11px; text-transform:uppercase; letter-spacing:1px; color:rgba(240,240,255,.4); margin-bottom:8px; }
+.autopick-footer { font-size:12px; color:rgba(240,240,255,.36); line-height:1.75; border-top:1px solid rgba(255,255,255,.08); padding-top:16px; }
 
 /* Mini score bars */
 .mini-scores { position:fixed; bottom:0; left:50%; transform:translateX(-50%); width:100%; max-width:480px; background:rgba(13,13,26,.95); backdrop-filter:blur(10px); border-top:1px solid var(--brd); padding:10px 20px 14px; z-index:20; }
@@ -161,6 +182,10 @@ html,body { height:100%; background:var(--bg); color:var(--tp); font-family:-app
         <div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div>
       </div>
       <div class="progress-text" id="progressText">Scenario 1 of 5</div>
+      <div class="timer-row">
+        <div class="timer-bar-track"><div class="timer-bar-fill" id="timerBarFill"></div></div>
+        <span class="timer-num" id="timerNum">30</span>
+      </div>
     </div>
     <div class="scenario-wrap" id="scenarioWrap"></div>
     <div class="mini-scores">
@@ -200,6 +225,7 @@ html,body { height:100%; background:var(--bg); color:var(--tp); font-family:-app
     <div class="footer-brand">
       Powered by Redilli
     </div>
+    <div class="results-scroll-fade" id="resultsFade"></div>
   </div>
 </div>
 <script>
@@ -226,12 +252,95 @@ function playBoom(){
 function playReveal(){
   if(soundMuted)return;try{const c=getACtx();[[261,329,392],[329,415,494],[392,494,587]].forEach((chord,ci)=>{chord.forEach(f=>{const o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);o.type='sine';o.frequency.value=f;const t=c.currentTime+ci*.48;g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(.08,t+.08);g.gain.setValueAtTime(.08,t+.3);g.gain.exponentialRampToValueAtTime(.001,t+.85);o.start(t);o.stop(t+.9);});});}catch(e){}
 }
+function playSad(){
+  if(soundMuted)return;try{const c=getACtx();[329.63,261.63,220,174.61].forEach((f,i)=>{const o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);o.type='triangle';o.frequency.value=f;const t=c.currentTime+i*.38;g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(.16,t+.06);g.gain.setValueAtTime(.16,t+.22);g.gain.exponentialRampToValueAtTime(.001,t+.6);o.start(t);o.stop(t+.65);});}catch(e){}
+}
 function playSparkle(){
   if(soundMuted)return;try{const c=getACtx();for(let i=0;i<6;i++){const o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);const t=c.currentTime+i*.055;o.frequency.setValueAtTime(1100+Math.random()*900,t);g.gain.setValueAtTime(.08,t);g.gain.exponentialRampToValueAtTime(.001,t+.1);o.start(t);o.stop(t+.12);}}catch(e){}
 }
 // AudioContext unlocked explicitly on startBtn click and choice selections
 </script>
 <script>
+// ── TIMER ENGINE ──────────────────────────────
+const TIMER_DURATION=30;
+let timerInterval=null,timeLeft=TIMER_DURATION;
+
+function startTimer(){
+  clearTimer();
+  timeLeft=TIMER_DURATION;
+  updateTimerUI();
+  timerInterval=setInterval(()=>{
+    timeLeft=Math.max(0,timeLeft-1);
+    updateTimerUI();
+    if(timeLeft===0){clearTimer();autoPickChoice();}
+  },1000);
+}
+
+function clearTimer(){
+  if(timerInterval){clearInterval(timerInterval);timerInterval=null;}
+}
+
+function updateTimerUI(){
+  const fill=document.getElementById('timerBarFill');
+  const num=document.getElementById('timerNum');
+  if(!fill||!num)return;
+  fill.style.width=(timeLeft/TIMER_DURATION*100)+'%';
+  num.textContent=timeLeft;
+  let color;
+  if(timeLeft>10){color='var(--acc)';fill.classList.remove('urgent');}
+  else if(timeLeft>5){color='#F39C12';fill.classList.remove('urgent');}
+  else{color='#E74C3C';fill.classList.add('urgent');}
+  fill.style.background=color;
+  num.style.color=timeLeft>10?'var(--tm)':color;
+}
+
+function autoPickChoice(){
+  if(G.locked)return;
+  G.locked=true;
+  G.autoPickCount=(G.autoPickCount||0)+1;
+  const sc=G.scenarios[G.idx];
+  const chosen=sc.choices[Math.floor(Math.random()*sc.choices.length)];
+  document.querySelectorAll('.choice-btn').forEach(b=>{
+    if(b.dataset.id===chosen.id)b.classList.add('selected');
+    else b.classList.add('fading-out');
+  });
+  playTap();
+  showAutoPickPopup(chosen.t,()=>{
+    DIMS.forEach(d=>{G.scores[d]+=(chosen.s[d]||0);});
+    updateBars();
+    const next=G.idx+1;
+    if(next===3||next===4){const used=G.scenarios.map(s=>s.id);G.scenarios.push(pickAdaptive(used,G.scores));}
+    G.idx++;
+    if(G.idx>=5)showResults();
+    else{playWhoosh();renderScenario();}
+  });
+}
+
+function showAutoPickPopup(choiceText,callback){
+  playSad();
+  const el=document.createElement('div');
+  el.className='autopick-overlay';
+  el.innerHTML=`
+    <div class="autopick-card">
+      <div class="autopick-icon">⏱</div>
+      <div class="autopick-title">Time's up.</div>
+      <div class="autopick-subtitle">The world didn't wait.</div>
+      <div class="autopick-choice"><strong>A decision was made for you</strong>"${choiceText}"</div>
+      <div class="autopick-footer">In real life, indecision is a decision.<br>Sometimes the choice that gets made isn't the one you wanted — and it still has consequences.</div>
+      <div style="margin-top:18px;font-size:11px;color:rgba(240,240,255,.22);letter-spacing:.5px;">Tap anywhere to continue</div>
+    </div>`;
+  document.body.appendChild(el);
+  let dismissed=false;
+  function dismiss(){
+    if(dismissed)return;dismissed=true;
+    el.style.transition='opacity .3s ease';
+    el.style.opacity='0';
+    setTimeout(()=>{el.remove();callback();},320);
+  }
+  el.addEventListener('click',dismiss);
+  setTimeout(dismiss,15000);
+}
+
 // ── SCENARIO DATA (81 scenarios) ─────────────
 const SC=[
 // PROJECT MANAGER
@@ -680,8 +789,32 @@ const PROFILES={
   ad:{name:'The Change Catalyst',color:'var(--ca)',insight:'You read a changing situation and adjust without losing composure. That flexibility is exactly what complex ambiguous environments require of leaders. The growth edge: build structures and habits so your adaptability stays available even when you are under maximum pressure.'},
 };
 
+// ── DATA COLLECTION ───────────────────────────
+// Paste your Apps Script deployment URL here after setup:
+const SHEET_URL = '';
+
+function submitResult(){
+  if(!SHEET_URL)return;
+  try{
+    const sc=G.scores;
+    const sorted=Object.keys(sc).sort((a,b)=>sc[b]-sc[a]);
+    const topDim=sorted[0];
+    const PROF_NAMES={ds:'The Fast Caller',rt:'The Bold Bet-Maker',sf:'The Relationship-First Leader',eb:'The Bias-to-Action Leader',ad:'The Change Catalyst'};
+    const payload=JSON.stringify({
+      ts:Date.now(),
+      profile:PROF_NAMES[topDim]||topDim,
+      topDim,
+      ds:sc.ds,rt:sc.rt,sf:sc.sf,eb:sc.eb,ad:sc.ad,
+      role:(G.scenarios[0]&&G.scenarios[0].role)||'',
+      autoPick:G.autoPickCount||0
+    });
+    fetch(SHEET_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:payload})
+      .catch(()=>{});
+  }catch(e){}
+}
+
 // ── STATE ─────────────────────────────────────
-let G={phase:'landing',scenarios:[],idx:0,scores:{ds:0,rt:0,sf:0,eb:0,ad:0},locked:false};
+let G={phase:'landing',scenarios:[],idx:0,scores:{ds:0,rt:0,sf:0,eb:0,ad:0},locked:false,autoPickCount:0};
 
 // ── SCENARIO SELECTION ────────────────────────
 function shuffle(a){const b=[...a];for(let i=b.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[b[i],b[j]]=[b[j],b[i]];}return b;}
@@ -725,7 +858,7 @@ function transition(from,to,cb){
 
 // ── GAME ──────────────────────────────────────
 function startGame(){
-  G={phase:'playing',scenarios:pick3(),idx:0,scores:{ds:0,rt:0,sf:0,eb:0,ad:0},locked:false};
+  G={phase:'playing',scenarios:pick3(),idx:0,scores:{ds:0,rt:0,sf:0,eb:0,ad:0},locked:false,autoPickCount:0};
   playBoom();
   transition('landing','game',()=>{renderScenario();updateBars();});
 }
@@ -752,11 +885,13 @@ function renderScenario(){
         </button>`).join('')}</div>
     </div>`;
   setTimeout(()=>playCard(),80);
+  startTimer();
 }
 
 function pick(cid,ev){
   if(G.locked)return;
   G.locked=true;
+  clearTimer();
   playTap();
   const btn=ev.currentTarget;
   const rect=btn.getBoundingClientRect();
@@ -794,8 +929,10 @@ function updateBars(){
 
 // ── RESULTS ───────────────────────────────────
 function showResults(){
+  clearTimer();
   playWhoosh();
   setTimeout(()=>playReveal(),500);
+  submitResult();
   transition('game','results',()=>renderResults());
 }
 
@@ -938,11 +1075,19 @@ document.getElementById('startBtn').addEventListener('click',async function(){
   startGame();
 });
 document.getElementById('retryBtn').addEventListener('click',()=>transition('results','landing',()=>{}));
-// Scroll results to top on show
+// Scroll results to top on show + scroll-hint fade
+const resultsEl=document.getElementById('results');
+const resultsFade=document.getElementById('resultsFade');
 new MutationObserver(()=>{
-  if(document.getElementById('results').classList.contains('active'))
-    document.getElementById('results').scrollTop=0;
-}).observe(document.getElementById('results'),{attributes:true,attributeFilter:['class']});
+  if(resultsEl.classList.contains('active')){
+    resultsEl.scrollTop=0;
+    resultsFade.style.opacity='1';
+  }
+}).observe(resultsEl,{attributes:true,attributeFilter:['class']});
+resultsEl.addEventListener('scroll',()=>{
+  const atBottom=resultsEl.scrollHeight-resultsEl.scrollTop-resultsEl.clientHeight<8;
+  resultsFade.style.opacity=atBottom?'0':'1';
+});
 </script>
 </body>
 </html>
